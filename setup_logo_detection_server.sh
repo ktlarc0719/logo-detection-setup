@@ -50,7 +50,7 @@ def pull_and_restart():
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
     run = subprocess.run(
-        ["docker", "run", "-dit", "--name", "logo-detection", "-p", "10000:10000", "-p", "9000:9000", "kentatsujikawadev/logo-detection:latest"],
+        ["docker", "run", "-dit", "--name", "logo-detection", "--restart=always", "-p", "10000:10000", "-p", "9000:9000", "kentatsujikawadev/logo-detection:latest"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
     return jsonify({
