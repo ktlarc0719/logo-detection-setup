@@ -88,7 +88,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable pull_restart_server
 sudo systemctl restart pull_restart_server
 
-# 8. 完了メッセージ
+# 8. 初回の起動トリガーを自動で送る（自分自身にGETリクエスト）
+curl -s http://127.0.0.1:8080/ > /dev/null
+
+# 9. 完了メッセージ
 ip=$(curl -s https://api.ipify.org)
 echo "✅ Setup complete. You can now trigger a Docker pull+restart via:"
 echo "   → http://${ip}:8080/"
