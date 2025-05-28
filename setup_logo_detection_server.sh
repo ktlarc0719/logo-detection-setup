@@ -4,21 +4,6 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 
-# needrestart のプロンプト抑止
-sudo bash -c "grep -q '^\\\$nrconf{restart}' /etc/needrestart/needrestart.conf \
-  && sed -i 's/^\\\$nrconf{restart}.*/\\\$nrconf{restart} = '\''a'\'';/' /etc/needrestart/needrestart.conf \
-  || echo '\$nrconf{restart} = '\''a'\'';' >> /etc/needrestart/needrestart.conf"
-
-# unattended-upgrades 対策
-sudo apt install -y unattended-upgrades
-echo 'Unattended-Upgrade::Automatic-Reboot "false";' | sudo tee /etc/apt/apt.conf.d/51disable-reboot
-sudo systemctl disable --now unattended-upgrades.service
-sudo systemctl disable --now apt-daily-upgrade.timer
-sudo systemctl disable --now apt-daily.timer
-
-# カーネルの更新をブロック
-sudo apt-mark hold linux-image-generic linux-headers-generic
-
 # 必要なパッケージ
 sudo apt update
 sudo apt upgrade -y --fix-missing
