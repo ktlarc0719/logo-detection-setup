@@ -5,8 +5,17 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a  # ← 追加：needrestartがプロンプトを出さないように
 
-# needrestartのプロンプト抑止
-sudo sed -i 's/^#\$nrconf{restart} = .*/$nrconf{restart} = '\''a'\'';/' /etc/needrestart/needrestart.conf || true
+# needrestart プロンプト抑止
+sudo bash -c "grep -q '^\\\$nrconf{restart}' /etc/needrestart/needrestart.conf \
+  && sed -i 's/^\\\$nrconf{restart}.*/\\\$nrconf{restart} = '\''a'\'';/' /etc/needrestart/needrestart.conf \
+  || echo '\$nrconf{restart} = '\''a'\'';' >> /etc/needrestart/needrestart.conf"
+
+# unattended-upgrades 対策
+sudo apt install -y unattended-upgrades
+echo 'Unattended-Upgrade::Automatic-Reboot "false";' | sudo tee /etc/apt/apt.conf.d/51disable-reboot
+
+# （必要なら）カーネル更新をブロック
+sudo apt-mark hold linux-image-generic linux-headers-generic
 
 # 1. 必要なパッケージをインストール
 sudo apt update && sudo apt upgrade -y
