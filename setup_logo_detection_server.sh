@@ -18,7 +18,7 @@ echo 'Unattended-Upgrade::Automatic-Reboot "false";' | sudo tee /etc/apt/apt.con
 sudo apt-mark hold linux-image-generic linux-headers-generic
 
 # 1. 必要なパッケージをインストール
-sudo apt update && sudo apt upgrade -y
+sudo apt update && sudo apt upgrade -y --fix-missing
 sudo apt install -y ca-certificates curl gnupg lsb-release python3 python3-venv
 
 # 2. Dockerのインストール
