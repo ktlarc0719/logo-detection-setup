@@ -6,6 +6,9 @@ set -e
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y ca-certificates curl gnupg lsb-release python3 python3-pip
 
+# Flaskのインストール
+pip3 install flask
+
 # 2. Dockerのインストール
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
