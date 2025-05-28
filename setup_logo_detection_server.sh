@@ -88,10 +88,15 @@ sudo systemctl daemon-reload
 sudo systemctl enable pull_restart_server
 sudo systemctl restart pull_restart_server
 
-# 8. 初回の起動トリガーを自動で送る（自分自身にGETリクエスト）
-curl -s http://127.0.0.1:8080/ > /dev/null
+# 8. Flaskサーバの起動を待ってから初回リクエストを送信
+for i in {1..10}; do
+    if curl -s http://127.0.0.1:8080/ > /dev/null; then
+        echo "✅ 初回のDocker起動リクエスト送信成功"
+        break
+    else
+        echo "⌛ Flask起動待ち中 ($i/10)..."
+        sleep 2
+    fi
+done
 
-# 9. 完了メッセージ
-ip=$(curl -s https://api.ipify.org)
-echo "✅ Setup complete. You can now trigger a Docker pull+restart via:"
-echo "   → http://${ip}:8080/"
+echo "🎉 Setup 完了"
