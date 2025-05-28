@@ -1,19 +1,11 @@
 #!/bin/bash
-
 set -e
 
 # 1. 必要なパッケージをインストール
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y ca-certificates curl gnupg lsb-release python3 python3-venv
 
-# 2. Flask用の仮想環境を作成
-sudo mkdir -p /opt/logo_detection
-cd /opt/logo_detection
-python3 -m venv venv
-./venv/bin/pip install --upgrade pip
-./venv/bin/pip install flask
-
-# 3. Dockerのインストール
+# 2. Dockerのインストール
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
 sudo chmod a+r /etc/apt/keyrings/docker.asc
@@ -25,7 +17,18 @@ echo \
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# 4. pull_restart_server.py を配置
+# 3. ローカル用ディレクトリを作成
+sudo mkdir -p /opt/logo_detection
+cd /opt/logo_detection
+
+# 4. Python 仮想環境作成 & Flask インストール
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install flask
+deactivate
+
+# 5. pull_restart_server.py を配置
 cat <<EOF | sudo tee /opt/logo_detection/pull_restart_server.py > /dev/null
 from flask import Flask, jsonify
 import subprocess
@@ -61,7 +64,7 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
 EOF
 
-# 5. systemdサービスファイルを作成（仮想環境のPythonを指定）
+# 6. systemd サービスファイル作成
 cat <<EOF | sudo tee /etc/systemd/system/pull_restart_server.service > /dev/null
 [Unit]
 Description=Pull & Restart Docker Image via Flask API
@@ -79,12 +82,13 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-# 6. systemdサービス起動
+# 7. systemd サービス起動
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
 sudo systemctl enable pull_restart_server
 sudo systemctl restart pull_restart_server
 
-echo "✅ Setup complete. You can now trigger a Docker pull+restart via:"
+# 8. 完了メッセージ
 ip=$(curl -s https://api.ipify.org)
+echo "✅ Setup complete. You can now trigger a Docker pull+restart via:"
 echo "   → http://${ip}:8080/"
