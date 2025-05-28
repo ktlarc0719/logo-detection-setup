@@ -1,11 +1,10 @@
 #!/bin/bash
 set -e
 
-# 対話プロンプトを抑制
 export DEBIAN_FRONTEND=noninteractive
-export NEEDRESTART_MODE=a  # ← 追加：needrestartがプロンプトを出さないように
+export NEEDRESTART_MODE=a
 
-# needrestart プロンプト抑止
+# needrestart のプロンプト抑止
 sudo bash -c "grep -q '^\\\$nrconf{restart}' /etc/needrestart/needrestart.conf \
   && sed -i 's/^\\\$nrconf{restart}.*/\\\$nrconf{restart} = '\''a'\'';/' /etc/needrestart/needrestart.conf \
   || echo '\$nrconf{restart} = '\''a'\'';' >> /etc/needrestart/needrestart.conf"
@@ -13,12 +12,16 @@ sudo bash -c "grep -q '^\\\$nrconf{restart}' /etc/needrestart/needrestart.conf \
 # unattended-upgrades 対策
 sudo apt install -y unattended-upgrades
 echo 'Unattended-Upgrade::Automatic-Reboot "false";' | sudo tee /etc/apt/apt.conf.d/51disable-reboot
+sudo systemctl disable --now unattended-upgrades.service
+sudo systemctl disable --now apt-daily-upgrade.timer
+sudo systemctl disable --now apt-daily.timer
 
-# （必要なら）カーネル更新をブロック
+# カーネルの更新をブロック
 sudo apt-mark hold linux-image-generic linux-headers-generic
 
-# 1. 必要なパッケージをインストール
-sudo apt update && sudo apt upgrade -y --fix-missing
+# 必要なパッケージ
+sudo apt update
+sudo apt upgrade -y --fix-missing
 sudo apt install -y ca-certificates curl gnupg lsb-release python3 python3-venv
 
 # 2. Dockerのインストール
