@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# 対話プロンプトを抑制
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a  # ← 追加：needrestartがプロンプトを出さないように
+
 # 1. 必要なパッケージをインストール
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y ca-certificates curl gnupg lsb-release python3 python3-venv
