@@ -1,7 +1,5 @@
 #!/bin/bash
 set -e
-export DEBIAN_FRONTEND=noninteractive
-export NEEDRESTART_MODE=a
 
 # 色付き出力
 GREEN='\033[0;32m'
@@ -9,41 +7,82 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${GREEN}🚀 Logo Detection API VPS Setup v2${NC}"
-echo "======================================"
+echo -e "${GREEN}🚀 Logo Detection API VPS Setup (Final Version)${NC}"
+echo "================================================"
 
-# 1. 必要なパッケージをインストール
+# 1. 環境変数を設定して再起動プロンプトを無効化
+echo -e "${YELLOW}🔧 Configuring system to avoid restart prompts...${NC}"
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export NEEDRESTART_SUSPEND=1
+
+# needrestartの設定を更新（再起動プロンプトを完全に無効化）
+if [ -f /etc/needrestart/needrestart.conf ]; then
+    sudo sed -i "s/#\$nrconf{restart} = 'i';/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
+    sudo sed -i "s/\$nrconf{restart} = 'i';/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
+fi
+
+# 2. パッケージの更新（再起動プロンプトなし）
+echo -e "${YELLOW}📦 Updating system packages...${NC}"
+sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
+
+# 3. 必要なパッケージをインストール
 echo -e "${YELLOW}📦 Installing required packages...${NC}"
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y ca-certificates curl gnupg lsb-release python3 python3-venv
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release \
+    python3 \
+    python3-venv \
+    python3-pip \
+    -o Dpkg::Options::="--force-confdef" \
+    -o Dpkg::Options::="--force-confold"
 
-# 2. Dockerのインストール（既にインストールされている場合はスキップ）
+# 4. Dockerのインストール（既にインストールされている場合はスキップ）
 if ! command -v docker &> /dev/null; then
     echo -e "${YELLOW}🐳 Installing Docker...${NC}"
+    
+    # Dockerのリポジトリを追加
     sudo install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
-    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
     echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
       $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-    sudo apt update
-    sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    # Dockerをインストール
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        docker-ce \
+        docker-ce-cli \
+        containerd.io \
+        docker-buildx-plugin \
+        docker-compose-plugin \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold"
+    
+    # 現在のユーザーをdockerグループに追加
     sudo usermod -aG docker $USER
+    
+    # Dockerサービスを開始
+    sudo systemctl start docker
+    sudo systemctl enable docker
 else
     echo -e "${GREEN}✓ Docker already installed${NC}"
 fi
 
-# 3. アプリケーション用ディレクトリを作成
-echo -e "${YELLOW}📁 Creating directories...${NC}"
+# 5. アプリケーション用ディレクトリを作成
+echo -e "${YELLOW}📁 Creating application directories...${NC}"
 sudo mkdir -p /opt/logo-detection/{logs,data}
 cd /opt/logo-detection
 
-# 4. 環境設定ファイルを作成（2コア2GB VPS向け）
+# 6. 環境設定ファイルを作成
 echo -e "${YELLOW}⚙️ Creating environment configuration...${NC}"
 cat <<'EOF' | sudo tee /opt/logo-detection/.env > /dev/null
-# VPS Configuration for Logo Detection API
+# Logo Detection API Configuration
 # Optimized for 2-core 2GB VPS
 
 # Performance Settings
@@ -59,15 +98,16 @@ LOG_LEVEL=INFO
 PORT=8000
 EOF
 
-# 5. Flask管理サーバーのセットアップ
-echo -e "${YELLOW}🔧 Setting up management server...${NC}"
+# 7. Python仮想環境のセットアップ
+echo -e "${YELLOW}🐍 Setting up Python virtual environment...${NC}"
 python3 -m venv /opt/logo-detection/venv
-source /opt/logo-detection/venv/bin/activate
-pip install --upgrade pip
-pip install flask
-deactivate
 
-# 6. 管理APIサーバーを作成
+# 仮想環境内でパッケージをインストール
+/opt/logo-detection/venv/bin/pip install --upgrade pip
+/opt/logo-detection/venv/bin/pip install flask
+
+# 8. 管理APIサーバーを作成
+echo -e "${YELLOW}📝 Creating management API server...${NC}"
 cat <<'EOF' | sudo tee /opt/logo-detection/manager.py > /dev/null
 from flask import Flask, jsonify, request
 import subprocess
@@ -96,11 +136,11 @@ def load_env():
                     env_vars[key.strip()] = value.strip()
     return env_vars
 
-def run_docker_command(cmd):
-    """Execute docker command and return result"""
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+def run_command(cmd):
+    """Execute command and return result"""
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=isinstance(cmd, str))
     return {
-        "command": " ".join(cmd),
+        "command": cmd if isinstance(cmd, str) else " ".join(cmd),
         "stdout": result.stdout,
         "stderr": result.stderr,
         "returncode": result.returncode,
@@ -109,63 +149,44 @@ def run_docker_command(cmd):
 
 @app.route("/", methods=["GET"])
 def index():
-    """Dashboard with current status"""
-    # Get container status
-    ps_result = run_docker_command(["docker", "ps", "-a", "--filter", f"name={CONTAINER_NAME}", "--format", "json"])
+    """Get current status"""
+    # Container status
+    ps_result = run_command(["docker", "ps", "-a", "--filter", f"name={CONTAINER_NAME}", "--format", "{{.Names}}\\t{{.Status}}\\t{{.Ports}}"])
     
-    container_info = None
-    if ps_result["stdout"]:
-        try:
-            container_info = json.loads(ps_result["stdout"].strip())
-        except:
-            pass
-    
-    # Get current configuration
+    # Current configuration
     env_vars = load_env()
     
-    # Check API health
-    health_check = subprocess.run(
-        ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", f"http://localhost:{API_PORT}/api/v1/health"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
-    api_healthy = health_check.stdout.strip() == "200"
+    # API health check
+    health = run_command(f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{API_PORT}/api/v1/health || echo '000'")
+    api_healthy = health["stdout"].strip() == "200"
     
     return jsonify({
         "timestamp": datetime.now().isoformat(),
         "container": {
             "name": CONTAINER_NAME,
-            "info": container_info,
+            "status": ps_result["stdout"].strip(),
             "api_healthy": api_healthy
         },
-        "configuration": env_vars,
-        "endpoints": {
-            "api": f"http://localhost:{API_PORT}",
-            "docs": f"http://localhost:{API_PORT}/docs",
-            "batch_ui": f"http://localhost:{API_PORT}/ui/batch"
-        }
+        "configuration": env_vars
     }), 200
 
 @app.route("/deploy", methods=["POST"])
 def deploy():
-    """Pull latest image and deploy/restart container"""
+    """Pull latest image and restart container"""
     results = {}
     
-    # 1. Pull latest image
+    # Pull latest image
     print("Pulling latest image...")
-    results["pull"] = run_docker_command(["docker", "pull", DOCKER_IMAGE])
+    results["pull"] = run_command(["docker", "pull", DOCKER_IMAGE])
     
-    # 2. Stop existing container
-    print("Stopping existing container...")
-    results["stop"] = run_docker_command(["docker", "stop", CONTAINER_NAME])
+    # Stop and remove existing container
+    results["stop"] = run_command(["docker", "stop", CONTAINER_NAME])
+    results["rm"] = run_command(["docker", "rm", CONTAINER_NAME])
     
-    # 3. Remove existing container
-    print("Removing existing container...")
-    results["rm"] = run_docker_command(["docker", "rm", CONTAINER_NAME])
-    
-    # 4. Load environment variables
+    # Load environment variables
     env_vars = load_env()
     
-    # 5. Build docker run command
+    # Build docker run command
     docker_cmd = [
         "docker", "run", "-d",
         "--name", CONTAINER_NAME,
@@ -181,53 +202,27 @@ def deploy():
     
     docker_cmd.append(DOCKER_IMAGE)
     
-    # 6. Start new container
+    # Start new container
     print("Starting new container...")
-    results["run"] = run_docker_command(docker_cmd)
+    results["run"] = run_command(docker_cmd)
     
-    # 7. Wait and check health
+    # Wait for health check
     time.sleep(5)
-    health_check = subprocess.run(
-        ["curl", "-s", f"http://localhost:{API_PORT}/api/v1/health"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
-    
-    try:
-        health_data = json.loads(health_check.stdout) if health_check.stdout else None
-    except:
-        health_data = None
-    
+    health = run_command(f"curl -s http://localhost:{API_PORT}/api/v1/health || echo '{{}}'")
     results["health"] = {
-        "status_code": health_check.returncode,
-        "data": health_data
+        "success": bool(health["stdout"].strip()),
+        "response": health["stdout"]
     }
     
-    # Determine overall success
-    success = results["run"]["success"] and health_data is not None
-    
-    return jsonify({
-        "success": success,
-        "message": "Deployment successful" if success else "Deployment failed",
-        "results": results
-    }), 200 if success else 500
+    return jsonify(results), 200 if results["run"]["success"] else 500
 
 @app.route("/logs", methods=["GET"])
 def logs():
     """Get container logs"""
     lines = request.args.get("lines", "100")
-    follow = request.args.get("follow", "false").lower() == "true"
-    
-    cmd = ["docker", "logs", "--tail", lines]
-    if follow:
-        cmd.append("-f")
-    cmd.append(CONTAINER_NAME)
-    
-    result = run_docker_command(cmd)
-    
+    result = run_command(["docker", "logs", "--tail", lines, CONTAINER_NAME])
     return jsonify({
-        "lines": lines,
-        "logs": result["stdout"] + result["stderr"],
-        "success": result["success"]
+        "logs": result["stdout"] + result["stderr"]
     }), 200
 
 @app.route("/config", methods=["GET", "POST"])
@@ -236,55 +231,30 @@ def config():
     if request.method == "GET":
         return jsonify(load_env()), 200
     
-    # POST - Update configuration
+    # Update configuration
     new_config = request.json
     if not new_config:
         return jsonify({"error": "No configuration provided"}), 400
     
-    # Load existing config
     env_vars = load_env()
-    
-    # Update with new values
     env_vars.update(new_config)
     
-    # Write back to file
+    # Write to file
     with open("/opt/logo-detection/.env", "w") as f:
-        f.write("# Logo Detection API Configuration\n")
-        f.write(f"# Updated: {datetime.now().isoformat()}\n\n")
+        f.write(f"# Updated: {datetime.now().isoformat()}\n")
         for key, value in env_vars.items():
             f.write(f"{key}={value}\n")
     
     return jsonify({
-        "message": "Configuration updated. Run /deploy to apply changes.",
+        "message": "Configuration updated. Run /deploy to apply.",
         "config": env_vars
     }), 200
-
-@app.route("/restart", methods=["POST"])
-def restart():
-    """Restart container without pulling new image"""
-    results = {}
-    
-    results["restart"] = run_docker_command(["docker", "restart", CONTAINER_NAME])
-    
-    # Wait and check health
-    time.sleep(5)
-    health_check = subprocess.run(
-        ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", f"http://localhost:{API_PORT}/api/v1/health"],
-        stdout=subprocess.PIPE, text=True
-    )
-    
-    results["health_check"] = {
-        "http_code": health_check.stdout.strip(),
-        "healthy": health_check.stdout.strip() == "200"
-    }
-    
-    return jsonify(results), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=False)
 EOF
 
-# 7. systemdサービスファイルを作成
+# 9. systemdサービスファイルを作成
 echo -e "${YELLOW}🔧 Creating systemd service...${NC}"
 cat <<EOF | sudo tee /etc/systemd/system/logo-detection-manager.service > /dev/null
 [Unit]
@@ -299,53 +269,71 @@ WorkingDirectory=/opt/logo-detection
 Restart=always
 RestartSec=5
 User=root
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# 8. パーミッション設定
+# 10. パーミッション設定
 echo -e "${YELLOW}🔐 Setting permissions...${NC}"
-sudo chown -R $USER:$USER /opt/logo-detection
+sudo chown -R root:root /opt/logo-detection
 sudo chmod -R 755 /opt/logo-detection
 
-# 9. サービスを開始
-echo -e "${YELLOW}🚀 Starting services...${NC}"
+# 11. サービスを開始
+echo -e "${YELLOW}🚀 Starting management service...${NC}"
 sudo systemctl daemon-reload
 sudo systemctl enable logo-detection-manager
 sudo systemctl restart logo-detection-manager
 
-# 10. 管理サーバーの起動を待つ
-echo -e "${YELLOW}⏳ Waiting for management server...${NC}"
-for i in {1..10}; do
-    if curl -s http://localhost:8080/ > /dev/null; then
+# 12. 管理サーバーの起動を待つ
+echo -e "${YELLOW}⏳ Waiting for management server to start...${NC}"
+MAX_ATTEMPTS=20
+ATTEMPT=0
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+    if curl -s http://localhost:8080/ > /dev/null 2>&1; then
         echo -e "${GREEN}✓ Management server is running${NC}"
         break
     fi
+    ATTEMPT=$((ATTEMPT + 1))
+    echo "Waiting... ($ATTEMPT/$MAX_ATTEMPTS)"
     sleep 2
 done
 
-# 11. 初回デプロイ
-echo -e "${YELLOW}🐳 Deploying Logo Detection API...${NC}"
-curl -X POST http://localhost:8080/deploy
+if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+    echo -e "${RED}✗ Management server failed to start${NC}"
+    echo "Checking logs..."
+    sudo journalctl -u logo-detection-manager --no-pager -n 50
+    exit 1
+fi
 
-# 12. APIの起動を待つ
+# 13. 初回デプロイ
+echo -e "${YELLOW}🐳 Deploying Logo Detection API...${NC}"
+DEPLOY_RESULT=$(curl -s -X POST http://localhost:8080/deploy)
+echo "$DEPLOY_RESULT" | python3 -m json.tool || echo "$DEPLOY_RESULT"
+
+# 14. APIの起動を待つ
 echo -e "${YELLOW}⏳ Waiting for API to start...${NC}"
-for i in {1..20}; do
-    if curl -s http://localhost:8000/api/v1/health > /dev/null; then
+MAX_ATTEMPTS=30
+ATTEMPT=0
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+    if curl -s http://localhost:8000/api/v1/health > /dev/null 2>&1; then
         echo -e "${GREEN}✓ API is running${NC}"
         break
     fi
-    sleep 3
+    ATTEMPT=$((ATTEMPT + 1))
+    echo "Waiting... ($ATTEMPT/$MAX_ATTEMPTS)"
+    sleep 2
 done
 
-# 13. 最終確認
+# 15. 最終ステータス確認
 echo -e "${YELLOW}📊 Final status check...${NC}"
-curl -s http://localhost:8080/ | python3 -m json.tool
+curl -s http://localhost:8080/ | python3 -m json.tool || curl -s http://localhost:8080/
 
-# 14. 完了メッセージ
-PUBLIC_IP=$(curl -s ifconfig.me)
+# 16. IPアドレスを取得（複数の方法を試す）
+PUBLIC_IP=$(curl -s -4 ifconfig.me || curl -s -4 icanhazip.com || curl -s -4 ident.me || echo "YOUR_SERVER_IP")
 
+# 17. 完了メッセージ
 echo ""
 echo -e "${GREEN}🎉 Setup completed successfully!${NC}"
 echo ""
@@ -355,13 +343,26 @@ echo "  API Docs: http://${PUBLIC_IP}:8000/docs"
 echo "  Batch UI: http://${PUBLIC_IP}:8000/ui/batch"
 echo "  Manager: http://${PUBLIC_IP}:8080"
 echo ""
-echo -e "${GREEN}🔧 Management Commands:${NC}"
-echo "  Status: curl http://localhost:8080/"
-echo "  Deploy: curl -X POST http://localhost:8080/deploy"
-echo "  Logs: curl http://localhost:8080/logs"
-echo "  Config: curl http://localhost:8080/config"
+echo -e "${GREEN}🔧 Quick Commands:${NC}"
+echo "  # Check status"
+echo "  curl http://localhost:8080/"
 echo ""
-echo -e "${GREEN}📝 Configuration Update Example:${NC}"
-echo '  curl -X POST http://localhost:8080/config \'
-echo '    -H "Content-Type: application/json" \'
-echo '    -d {"MAX_CONCURRENT_DETECTIONS":"3"}'
+echo "  # View logs"
+echo "  curl http://localhost:8080/logs?lines=50"
+echo ""
+echo "  # Update configuration"
+echo "  curl -X POST http://localhost:8080/config \\"
+echo "    -H 'Content-Type: application/json' \\"
+echo "    -d '{\"MAX_BATCH_SIZE\":\"50\"}'"
+echo ""
+echo "  # Deploy latest version"
+echo "  curl -X POST http://localhost:8080/deploy"
+echo ""
+
+# 18. 再起動が必要かチェック
+if [ -f /var/run/reboot-required ]; then
+    echo -e "${YELLOW}⚠️  System restart required. Please reboot when convenient.${NC}"
+    echo "  sudo reboot"
+else
+    echo -e "${GREEN}✓ No system restart required${NC}"
+fi
